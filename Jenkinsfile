@@ -79,21 +79,19 @@ pipeline {
             steps {
                 script {
                     withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                        sh """
-                            echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin ${DOCKER_REGISTRY}
-                            
-                            docker push ${DOCKER_USERNAME}/auth:${VERSION}
-                            docker push ${DOCKER_USERNAME}/auth:latest
-                            
-                            docker push ${DOCKER_USERNAME}/users:${VERSION}
-                            docker push ${DOCKER_USERNAME}/users:latest
-                            
-                            docker push ${DOCKER_USERNAME}/items:${VERSION}
-                            docker push ${DOCKER_USERNAME}/items:latest
-                            
-                            docker push ${DOCKER_USERNAME}/gateway:${VERSION}
-                            docker push ${DOCKER_USERNAME}/gateway:latest
-                        """
+                        sh 'echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin'
+                        
+                        sh "docker push leogrv22/auth:${VERSION}"
+                        sh "docker push leogrv22/auth:latest"
+                        
+                        sh "docker push leogrv22/users:${VERSION}"
+                        sh "docker push leogrv22/users:latest"
+                        
+                        sh "docker push leogrv22/items:${VERSION}"
+                        sh "docker push leogrv22/items:latest"
+                        
+                        sh "docker push leogrv22/gateway:${VERSION}"
+                        sh "docker push leogrv22/gateway:latest"
                     }
                 }
             }
