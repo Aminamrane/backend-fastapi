@@ -49,6 +49,7 @@ pipeline {
                         cd Microservices/auth
                         docker build -t ${DOCKER_USERNAME}/auth:${VERSION} .
                         docker tag ${DOCKER_USERNAME}/auth:${VERSION} ${DOCKER_USERNAME}/auth:latest
+                        docker tag ${DOCKER_USERNAME}/auth:${VERSION} ${DOCKER_USERNAME}/auth:dev
                     """
                     
                     // Build Users service
@@ -56,6 +57,7 @@ pipeline {
                         cd Microservices/users
                         docker build -t ${DOCKER_USERNAME}/users:${VERSION} .
                         docker tag ${DOCKER_USERNAME}/users:${VERSION} ${DOCKER_USERNAME}/users:latest
+                        docker tag ${DOCKER_USERNAME}/users:${VERSION} ${DOCKER_USERNAME}/users:dev
                     """
                     
                     // Build Items service
@@ -63,6 +65,7 @@ pipeline {
                         cd Microservices/items
                         docker build -t ${DOCKER_USERNAME}/items:${VERSION} .
                         docker tag ${DOCKER_USERNAME}/items:${VERSION} ${DOCKER_USERNAME}/items:latest
+                        docker tag ${DOCKER_USERNAME}/items:${VERSION} ${DOCKER_USERNAME}/items:dev
                     """
                     
                     // Build Gateway service
@@ -70,6 +73,7 @@ pipeline {
                         cd Microservices/gateway
                         docker build -t ${DOCKER_USERNAME}/gateway:${VERSION} .
                         docker tag ${DOCKER_USERNAME}/gateway:${VERSION} ${DOCKER_USERNAME}/gateway:latest
+                        docker tag ${DOCKER_USERNAME}/gateway:${VERSION} ${DOCKER_USERNAME}/gateway:dev
                     """
                 }
             }
@@ -83,15 +87,19 @@ pipeline {
                         
                         sh "docker push leogrv22/auth:${VERSION}"
                         sh "docker push leogrv22/auth:latest"
+                        sh "docker push leogrv22/auth:dev"
                         
                         sh "docker push leogrv22/users:${VERSION}"
                         sh "docker push leogrv22/users:latest"
+                        sh "docker push leogrv22/users:dev"
                         
                         sh "docker push leogrv22/items:${VERSION}"
                         sh "docker push leogrv22/items:latest"
+                        sh "docker push leogrv22/items:dev"
                         
                         sh "docker push leogrv22/gateway:${VERSION}"
                         sh "docker push leogrv22/gateway:latest"
+                        sh "docker push leogrv22/gateway:dev"
                     }
                 }
             }
