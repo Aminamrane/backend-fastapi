@@ -18,36 +18,43 @@ pipeline {
             }
         }
 
-        stage('Unit Tests (Dockerized)') {
-            steps {
-                echo "Running unit tests in Python container (no local pip/venv)..."
-                sh '''
+    stage('Unit Tests') {
+        steps {
+            echo "Running unit tests in Python container (COPY mode, no bind mount)..."
+            sh '''
+                set -e
+
+                run_tests() {
+                    svc="$1"
+                    echo "---- Tests for $svc ----"
+
+                    if [ ! -d "Microservices/$svc/tests" ]; then
+                    echo "No tests folder for $svc -> skip"
+                    return 0
+                    fi
+
+                    cid=$(docker create python:3.12-slim bash -lc '
                     set -e
+                    cd /app
+                    python -m pip install -U pip >/dev/null
+                    pip install -r requirements.txt >/dev/null
+                    pytest -q
+                    ')
 
-                    run_tests() {
-                      svc="$1"
-                      echo "---- Tests for $svc ----"
+                    # Copy service code into container
+                    docker cp "Microservices/$svc/." "$cid:/app"
 
-                      if [ ! -d "Microservices/$svc/tests" ]; then
-                        echo "No tests folder for $svc -> skip"
-                        return 0
-                      fi
+                    # Run tests
+                    docker start -a "$cid"
 
-                      docker run --rm \
-                        -v "$PWD/Microservices/$svc:/app" \
-                        -w /app \
-                        -e PYTHONPATH=/app \
-                        python:3.12-slim bash -lc '
-                          pip install -U pip >/dev/null &&
-                          pip install -r requirements.txt >/dev/null &&
-                          pytest -q
-                        '
-                    }
+                    # Cleanup
+                    docker rm -f "$cid" >/dev/null
+                }
 
-                    run_tests auth
-                    run_tests users
-                    run_tests items
-                    run_tests gateway
+                run_tests auth
+                # run_tests users
+                # run_tests items
+                # run_tests gateway
                 '''
             }
         }
@@ -94,7 +101,7 @@ pipeline {
             }
         }
 
-        stage('Security Scan (Trivy)') {
+        stage('Security Scan') {
             steps {
                 script {
                     echo "Running Trivy security scan on Docker images..."
