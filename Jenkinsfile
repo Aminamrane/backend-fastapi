@@ -1,126 +1,183 @@
 pipeline {
     agent any
-    
+
     environment {
-        DOCKER_REGISTRY = 'docker.io'
-        DOCKER_USERNAME = 'leogrv22'
-        IMAGE_NAME = 'fastapi-backend'
-        VERSION = "${env.BUILD_NUMBER}"
-        HELM_PIPELINE_JOB = 'helm-deploy'
+        DOCKER_REGISTRY      = 'docker.io'
+        DOCKER_USERNAME      = 'leogrv22'
+        VERSION              = "${env.BUILD_NUMBER}"
+        HELM_PIPELINE_JOB    = 'helm-deploy'
         KUBERNETES_NAMESPACE = 'dev'
-        AWS_REGION = 'eu-west-3'
+        AWS_REGION           = 'eu-west-3'
     }
-    
+
     stages {
         stage('Checkout') {
             steps {
+                echo "Checking out code from ${env.GIT_URL}"
+                checkout scm
+            }
+        }
+
+        stage('Unit Tests (Dockerized)') {
+            steps {
+                echo "Running unit tests in Python container (no local pip/venv)..."
+                sh '''
+                    set -e
+
+                    run_tests() {
+                      svc="$1"
+                      echo "---- Tests for $svc ----"
+
+                      if [ ! -d "Microservices/$svc/tests" ]; then
+                        echo "No tests folder for $svc -> skip"
+                        return 0
+                      fi
+
+                      docker run --rm \
+                        -v "$PWD/Microservices/$svc:/app" \
+                        -w /app \
+                        -e PYTHONPATH=/app \
+                        python:3.12-slim bash -lc '
+                          pip install -U pip >/dev/null &&
+                          pip install -r requirements.txt >/dev/null &&
+                          pytest -q
+                        '
+                    }
+
+                    run_tests auth
+                    run_tests users
+                    run_tests items
+                    run_tests gateway
+                '''
+            }
+        }
+
+        stage('Build Docker Images') {
+            steps {
+                echo "Building Docker images for all microservices..."
+
+                sh """
+                    set -e
+
+                    cd Microservices/auth
+                    docker build -t ${DOCKER_USERNAME}/auth:${VERSION} .
+                    docker tag ${DOCKER_USERNAME}/auth:${VERSION} ${DOCKER_USERNAME}/auth:latest
+                    docker tag ${DOCKER_USERNAME}/auth:${VERSION} ${DOCKER_USERNAME}/auth:dev
+                """
+
+                sh """
+                    set -e
+
+                    cd Microservices/users
+                    docker build -t ${DOCKER_USERNAME}/users:${VERSION} .
+                    docker tag ${DOCKER_USERNAME}/users:${VERSION} ${DOCKER_USERNAME}/users:latest
+                    docker tag ${DOCKER_USERNAME}/users:${VERSION} ${DOCKER_USERNAME}/users:dev
+                """
+
+                sh """
+                    set -e
+
+                    cd Microservices/items
+                    docker build -t ${DOCKER_USERNAME}/items:${VERSION} .
+                    docker tag ${DOCKER_USERNAME}/items:${VERSION} ${DOCKER_USERNAME}/items:latest
+                    docker tag ${DOCKER_USERNAME}/items:${VERSION} ${DOCKER_USERNAME}/items:dev
+                """
+
+                sh """
+                    set -e
+
+                    cd Microservices/gateway
+                    docker build -t ${DOCKER_USERNAME}/gateway:${VERSION} .
+                    docker tag ${DOCKER_USERNAME}/gateway:${VERSION} ${DOCKER_USERNAME}/gateway:latest
+                    docker tag ${DOCKER_USERNAME}/gateway:${VERSION} ${DOCKER_USERNAME}/gateway:dev
+                """
+            }
+        }
+
+        stage('Security Scan (Trivy)') {
+            steps {
                 script {
-                    echo "Checking out code from ${env.GIT_URL}"
-                    checkout scm
+                    echo "Running Trivy security scan on Docker images..."
+
+                    sh '''
+                        docker run --rm \
+                            -v /var/run/docker.sock:/var/run/docker.sock \
+                            aquasec/trivy:latest image \
+                            --severity HIGH,CRITICAL \
+                            --no-progress \
+                            --exit-code 0 \
+                            leogrv22/auth:${VERSION}
+
+                        docker run --rm \
+                            -v /var/run/docker.sock:/var/run/docker.sock \
+                            aquasec/trivy:latest image \
+                            --severity HIGH,CRITICAL \
+                            --no-progress \
+                            --exit-code 0 \
+                            leogrv22/users:${VERSION}
+
+                        docker run --rm \
+                            -v /var/run/docker.sock:/var/run/docker.sock \
+                            aquasec/trivy:latest image \
+                            --severity HIGH,CRITICAL \
+                            --no-progress \
+                            --exit-code 0 \
+                            leogrv22/items:${VERSION}
+
+                        docker run --rm \
+                            -v /var/run/docker.sock:/var/run/docker.sock \
+                            aquasec/trivy:latest image \
+                            --severity HIGH,CRITICAL \
+                            --no-progress \
+                            --exit-code 0 \
+                            leogrv22/gateway:${VERSION}
+                        '''
                 }
             }
         }
-        
-        stage('Tests') {
+
+        stage('Push to Docker Hub') {
             steps {
-                script {
-                    echo "Running unit tests..."
+                echo "Pushing images to Docker Hub..."
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                     sh '''
-                        # Install dependencies for each microservice
-                        cd Microservices/auth && pip install -r requirements.txt || true
-                        cd ../users && pip install -r requirements.txt || true
-                        cd ../items && pip install -r requirements.txt || true
-                        cd ../gateway && pip install -r requirements.txt || true
-                        
-                        # Run tests if they exist (placeholder for now)
-                        echo "Tests completed (no test files found yet)"
+                        set -e
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+
+                        docker push leogrv22/auth:'"$VERSION"'
+                        docker push leogrv22/auth:latest
+                        docker push leogrv22/auth:dev
+
+                        docker push leogrv22/users:'"$VERSION"'
+                        docker push leogrv22/users:latest
+                        docker push leogrv22/users:dev
+
+                        docker push leogrv22/items:'"$VERSION"'
+                        docker push leogrv22/items:latest
+                        docker push leogrv22/items:dev
+
+                        docker push leogrv22/gateway:'"$VERSION"'
+                        docker push leogrv22/gateway:latest
+                        docker push leogrv22/gateway:dev
                     '''
                 }
             }
         }
-        
-        stage('Build Docker Images') {
-            steps {
-                script {
-                    echo "Building Docker images for all microservices..."
-                    
-                    // Build Auth service
-                    sh """
-                        cd Microservices/auth
-                        docker build -t ${DOCKER_USERNAME}/auth:${VERSION} .
-                        docker tag ${DOCKER_USERNAME}/auth:${VERSION} ${DOCKER_USERNAME}/auth:latest
-                        docker tag ${DOCKER_USERNAME}/auth:${VERSION} ${DOCKER_USERNAME}/auth:dev
-                    """
-                    
-                    // Build Users service
-                    sh """
-                        cd Microservices/users
-                        docker build -t ${DOCKER_USERNAME}/users:${VERSION} .
-                        docker tag ${DOCKER_USERNAME}/users:${VERSION} ${DOCKER_USERNAME}/users:latest
-                        docker tag ${DOCKER_USERNAME}/users:${VERSION} ${DOCKER_USERNAME}/users:dev
-                    """
-                    
-                    // Build Items service
-                    sh """
-                        cd Microservices/items
-                        docker build -t ${DOCKER_USERNAME}/items:${VERSION} .
-                        docker tag ${DOCKER_USERNAME}/items:${VERSION} ${DOCKER_USERNAME}/items:latest
-                        docker tag ${DOCKER_USERNAME}/items:${VERSION} ${DOCKER_USERNAME}/items:dev
-                    """
-                    
-                    // Build Gateway service
-                    sh """
-                        cd Microservices/gateway
-                        docker build -t ${DOCKER_USERNAME}/gateway:${VERSION} .
-                        docker tag ${DOCKER_USERNAME}/gateway:${VERSION} ${DOCKER_USERNAME}/gateway:latest
-                        docker tag ${DOCKER_USERNAME}/gateway:${VERSION} ${DOCKER_USERNAME}/gateway:dev
-                    """
-                }
-            }
-        }
-        
-        stage('Push to Docker Hub') {
-            steps {
-                script {
-                    withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                        sh 'echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin'
-                        
-                        sh "docker push leogrv22/auth:${VERSION}"
-                        sh "docker push leogrv22/auth:latest"
-                        sh "docker push leogrv22/auth:dev"
-                        
-                        sh "docker push leogrv22/users:${VERSION}"
-                        sh "docker push leogrv22/users:latest"
-                        sh "docker push leogrv22/users:dev"
-                        
-                        sh "docker push leogrv22/items:${VERSION}"
-                        sh "docker push leogrv22/items:latest"
-                        sh "docker push leogrv22/items:dev"
-                        
-                        sh "docker push leogrv22/gateway:${VERSION}"
-                        sh "docker push leogrv22/gateway:latest"
-                        sh "docker push leogrv22/gateway:dev"
-                    }
-                }
-            }
-        }
-        
+
         stage('Trigger Helm Deployment') {
             steps {
-                script {
-                    echo "Triggering Helm pipeline to deploy backend services..."
-                    build job: "${HELM_PIPELINE_JOB}", 
-                          parameters: [
-                              string(name: 'SERVICE', value: 'backend'),
-                              string(name: 'IMAGE_VERSION', value: "${VERSION}"),
-                              string(name: 'NAMESPACE', value: "${KUBERNETES_NAMESPACE}")
-                          ],
-                          wait: false
-                }
+                echo "Triggering Helm pipeline to deploy backend services..."
+                build job: "${HELM_PIPELINE_JOB}",
+                      parameters: [
+                          string(name: 'SERVICE', value: 'backend'),
+                          string(name: 'IMAGE_VERSION', value: "${VERSION}"),
+                          string(name: 'NAMESPACE', value: "${KUBERNETES_NAMESPACE}")
+                      ],
+                      wait: false
             }
         }
     }
-    
+
     post {
         success {
             echo "✅ Backend pipeline completed successfully!"
@@ -134,4 +191,3 @@ pipeline {
         }
     }
 }
-
