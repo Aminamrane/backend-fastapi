@@ -38,6 +38,7 @@ pipeline {
                     cd /app
                     python -m pip install -U pip >/dev/null
                     pip install -r requirements.txt >/dev/null
+                    export PYTHONPATH=/app
                     pytest -q
                     ')
 
