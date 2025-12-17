@@ -20,7 +20,7 @@ pipeline {
 
     stage('Unit Tests') {
         steps {
-            echo "Running unit tests in Python container (COPY mode, no bind mount)..."
+            echo "Running unit tests in Python container"
             sh '''
                 set -e
 
@@ -152,19 +152,19 @@ pipeline {
                         set -e
                         echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
 
-                        docker push leogrv22/auth:'"$VERSION"'
+                        docker push leogrv22/auth:$VERSION
                         docker push leogrv22/auth:latest
                         docker push leogrv22/auth:dev
 
-                        docker push leogrv22/users:'"$VERSION"'
+                        docker push leogrv22/users:$VERSION
                         docker push leogrv22/users:latest
                         docker push leogrv22/users:dev
 
-                        docker push leogrv22/items:'"$VERSION"'
+                        docker push leogrv22/items:$VERSION
                         docker push leogrv22/items:latest
                         docker push leogrv22/items:dev
 
-                        docker push leogrv22/gateway:'"$VERSION"'
+                        docker push leogrv22/gateway:$VERSION
                         docker push leogrv22/gateway:latest
                         docker push leogrv22/gateway:dev
                     '''
